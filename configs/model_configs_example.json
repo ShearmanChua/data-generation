@@ -1,0 +1,15 @@
+{
+    "openai": {
+        "base_url": "https://api.openai.com/v1/chat/completions",
+        "api_key": "",
+        "model": "gpt-4o-2024-08-06",
+        "client_type": "openai"
+    },
+    "llama-70b": {
+        "base_url": "http://192.168.100.32:8000/v1",
+        "api_key": "empty",
+        "model": "Llama-3.3-70B-Instruct",
+        "tokenizer": "meta-llama/Llama-3.3-70B-Instruct",
+        "client_type": "vllm"
+    }
+}
