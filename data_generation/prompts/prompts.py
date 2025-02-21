@@ -109,3 +109,20 @@ The prompt you write should follow the same style and structure as the following
 
 User dataset description:
 """
+
+GENERATE_DESCRIPTION_DATASET_WO_EXAMPLES = (
+    "An ML practitioner is looking for a dataset that matches the dataset description '{dataset_description}'. "
+    "Generate a plausible, clear, single-sentence instruction that is suitable for a dataset with the dataset "
+    "description '{dataset_description}'. "
+    "Focus on quality text content. "
+    "Now, generate the instruction without any pre/postamble"
+)
+
+GENERATE_DESCRIPTION_DATASET_W_EXAMPLES = (
+    "An ML practitioner is looking for a dataset that matches the dataset description '{dataset_description}'. "
+    "Generate a plausible, clear, single-sentence instruction that is suitable for a dataset with the dataset "
+    "description '{dataset_description}'. \n\n"
+    "Here are some examples of suitable instructions for this dataset:\n\n{example_instructions}\n\n"
+    "Focus on quality text content. "
+    "Now, generate the instruction without any pre/postamble"
+)

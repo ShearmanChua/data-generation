@@ -27,7 +27,7 @@ def generate_sample_data(dataset_description, example_instructions, uploaded_fil
     
     extracted_nodes = [parse_markdown(text) for text in extracted_texts]
 
-    
+
 
 
 
@@ -115,6 +115,10 @@ with gr.Blocks() as app:
 
         gr.HTML(value="<hr>")
         gr.Markdown(value="## 2. Generated sample dataset")
+        with gr.Row():
+            system_prompt = gr.Textbox(label="System prompt",
+                                       placeholder="System Prompt",
+                                       interactive=False)
         with gr.Row(equal_height=False):
             sample_dataset = get_dataframe(columns=["instruction", "completion"])
 
