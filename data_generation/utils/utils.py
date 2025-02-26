@@ -7,12 +7,14 @@ from docling.backend.msword_backend import MsWordDocumentBackend
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import FigureElement, InputFormat, Table
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import (DocumentConverter, PdfFormatOption,
-                                        WordFormatOption)
+from docling.document_converter import (
+    DocumentConverter,
+    PdfFormatOption,
+    WordFormatOption,
+)
 from docling.pipeline.simple_pipeline import SimplePipeline
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
-from docling_core.types.doc import (ImageRef, ImageRefMode, PictureItem,
-                                    TableItem)
+from docling_core.types.doc import ImageRef, ImageRefMode, PictureItem, TableItem
 from pydantic import AnyUrl
 
 IMAGE_RESOLUTION_SCALE = 2.0
@@ -43,24 +45,30 @@ doc_converter = (
     )
 )
 
-def get_dataframe(columns: List[str]=["prompt", "completion"], kwargs={"wrap": True, "interactive": False}):
-    return gr.Dataframe(
-        headers= columns,
-        **kwargs
-    )
+
+def get_dataframe(
+    columns: List[str] = ["prompt", "completion"],
+    kwargs={"wrap": True, "interactive": False},
+):
+    return gr.Dataframe(headers=columns, **kwargs)
+
 
 def extract_text_from_document(document):
     text = ""
     try:
         with open(document.name, "rb") as source:
             conversion_result = doc_converter.convert(source)
-            markdown = conversion_result.document.export_to_markdown(image_mode=ImageRefMode.REFERENCED)
-            text= markdown
+            markdown = conversion_result.document.export_to_markdown(
+                image_mode=ImageRefMode.REFERENCED
+            )
+            text = markdown
     except Exception as e:
         text = f"Error reading file: {str(e)}"
     return text
 
+
 import re
+
 
 def parse_markdown(text):
     markdown_nodes = []
@@ -76,7 +84,7 @@ def parse_markdown(text):
             code_block = not code_block
             current_section += line + "\n"
             continue
-        
+
         # Only parse headers if we're not in a code block
         if not code_block:
             header_match = re.match(r"^(#+)\s(.*)", line)
@@ -86,19 +94,19 @@ def parse_markdown(text):
                     markdown_nodes.append(
                         current_section.strip(),
                     )
-        
+
                 level = len(header_match.group(1))
                 header_text = header_match.group(2)
-        
+
                 # Pop headers of equal or higher level
                 while header_stack and len(header_stack) >= level:
                     header_stack.pop()
-        
+
                 # Add the new header
                 header_stack.append(header_text)
                 current_section = "#" * level + f" {header_text}\n"
                 continue
-        
+
         current_section += line + "\n"
 
     # Add the final section

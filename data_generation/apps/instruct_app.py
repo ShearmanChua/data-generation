@@ -11,10 +11,12 @@ from utils.utils import *
 
 instruct_pipeline = InstructPipeline()
 
+
 def generate_examples(dataset_description):
     examples = INSTRUCT_EXAMPLES[dataset_description]
     df = pd.DataFrame(examples)
     return df
+
 
 def generate_sample_data(dataset_description, example_instructions, uploaded_files):
     num_examples = 5
@@ -22,20 +24,21 @@ def generate_sample_data(dataset_description, example_instructions, uploaded_fil
     extracted_texts = []
     if uploaded_files:
         for uploaded_file in uploaded_files:
-            assert uploaded_file.name.endswith(".pdf") or uploaded_file.name.endswith(".docx"), "Only PDF and DOCX files are supported."
+            assert uploaded_file.name.endswith(".pdf") or uploaded_file.name.endswith(
+                ".docx"
+            ), "Only PDF and DOCX files are supported."
             extracted_texts.append(extract_text_from_document(uploaded_file))
-    
+
     extracted_nodes = [parse_markdown(text) for text in extracted_texts]
-
-
-
 
 
 def generate_synthetic_data(instruction, num_samples, uploaded_files):
     extracted_text = ""
     if uploaded_files:
         for uploaded_file in uploaded_files:
-            assert uploaded_file.name.endswith(".pdf") or uploaded_file.name.endswith(".docx"), "Only PDF and DOCX files are supported."
+            assert uploaded_file.name.endswith(".pdf") or uploaded_file.name.endswith(
+                ".docx"
+            ), "Only PDF and DOCX files are supported."
             extracted_text = extract_text_from_document(uploaded_file)
 
     if not extracted_text:
@@ -80,9 +83,7 @@ with gr.Blocks() as app:
                     file_count="multiple",
                 )
                 with gr.Row():
-                    clear_file_btn_part = gr.Button(
-                        "Clear", variant="secondary"
-                    )
+                    clear_file_btn_part = gr.Button("Clear", variant="secondary")
                     load_file_btn = gr.Button("Load", variant="primary")
 
                 dataset_description = gr.Textbox(
@@ -90,10 +91,21 @@ with gr.Blocks() as app:
                     placeholder="Give a precise description of your desired dataset.",
                 )
                 with gr.Row():
+                    use_magpie = (
+                        gr.Radio(
+                            ["True", "False"],
+                            label="Use Magpie",
+                            info="Use Magpie to generate examples",
+                            value="True",
+                        ),
+                    )
+                with gr.Row():
                     clear_prompt_btn_part = gr.Button("Clear", variant="secondary")
                     load_prompt_btn = gr.Button("Create", variant="primary")
             with gr.Column(scale=3):
-                gr.Markdown("Example instructions and completion answers (click on the box to edit or add new rows):")
+                gr.Markdown(
+                    "Example instructions and completion answers (click on the box to edit or add new rows):"
+                )
                 example_instructions = get_dataframe(
                     columns=["instruction", "completion"],
                     kwargs={"wrap": True, "interactive": True},
@@ -116,9 +128,9 @@ with gr.Blocks() as app:
         gr.HTML(value="<hr>")
         gr.Markdown(value="## 2. Generated sample dataset")
         with gr.Row():
-            system_prompt = gr.Textbox(label="System prompt",
-                                       placeholder="System Prompt",
-                                       interactive=False)
+            system_prompt = gr.Textbox(
+                label="System prompt", placeholder="System Prompt", interactive=False
+            )
         with gr.Row(equal_height=False):
             sample_dataset = get_dataframe(columns=["instruction", "completion"])
 

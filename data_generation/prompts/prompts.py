@@ -110,7 +110,12 @@ The prompt you write should follow the same style and structure as the following
 User dataset description:
 """
 
-GENERATE_DESCRIPTION_DATASET_WO_EXAMPLES = (
+SYSTEM_PROMPT_W_DOCUMENT_CONTEXT = (
+    "{system_prompt}\n\n",
+    "Below is some additional context to assist you in your task:\n\n{document_context}\n\n",
+)
+
+GENERATE_DESCRIPTION_INSTRUCTION_WO_EXAMPLES = (
     "An ML practitioner is looking for a dataset that matches the dataset description '{dataset_description}'. "
     "Generate a plausible, clear, single-sentence instruction that is suitable for a dataset with the dataset "
     "description '{dataset_description}'. "
@@ -118,7 +123,7 @@ GENERATE_DESCRIPTION_DATASET_WO_EXAMPLES = (
     "Now, generate the instruction without any pre/postamble"
 )
 
-GENERATE_DESCRIPTION_DATASET_W_EXAMPLES = (
+GENERATE_DESCRIPTION_INSTRUCTION_W_EXAMPLES = (
     "An ML practitioner is looking for a dataset that matches the dataset description '{dataset_description}'. "
     "Generate a plausible, clear, single-sentence instruction that is suitable for a dataset with the dataset "
     "description '{dataset_description}'. \n\n"
