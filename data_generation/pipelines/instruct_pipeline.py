@@ -15,6 +15,9 @@ from distilabel.steps.tasks import (
 )
 
 from distilabel.models import ClientvLLM, OpenAILLM
+from distilabel.distiset import Distiset
+
+from datasets import Dataset
 
 from prompts.prompts import PROMPT_CREATION_SYS_PROMPT, SYSTEM_PROMPT_W_DOCUMENT_CONTEXT
 
@@ -46,6 +49,14 @@ class InstructPipeline():
                 system_prompt = self.generate_system_prompt(dataset_description, config)
                 magpie_num_examples = int(NUM_EVAL_SAMPLES/2)
                 text_gen_num_examples = NUM_EVAL_SAMPLES - magpie_num_examples
+
+                magpie_examples = self.generate_magpie_data(
+                    model_config=config,
+                    is_sample=True,
+                    num_samples=magpie_num_examples,
+                    document_context=document_context,
+                    system_prompt=system_prompt,
+                )
 
             elif config["client_type"] == "vllm" or config["client_type"] == "openai":
                 system_prompt = self.generate_system_prompt(dataset_description, config)
@@ -154,15 +165,50 @@ class InstructPipeline():
             n_processed += batch_size
             
         progress(0.5, desc="(1/2) Generating instructions")
+
+        for instruction, system_prompt in zip(magpie_results, sampled_system_prompts):
+            instruction["system_prompt"] = system_prompt
         
         response_results = self.generate_instruction_responses(
             model_config=model_config,
             is_sample=is_sample,
             num_samples=num_samples,
             document_context=document_context,
-            system_prompt=system_prompt
+            instuctions=magpie_results,
+            progress=progress
         )
 
+        progress(
+            1,
+            total=total_steps,
+            desc="(2/2) Creating dataset",
+        )
+
+        distiset_results = []
+        for result in response_results:
+            record = {}
+            for relevant_keys in [
+                "messages",
+                "prompt",
+                "completion",
+                "model_name",
+                "system_prompt",
+            ]:
+                if relevant_keys in result:
+                    record[relevant_keys] = result[relevant_keys]
+            distiset_results.append(record)
+
+        distiset = Distiset(
+            {
+                "default": Dataset.from_list(distiset_results),
+            }
+        )
+
+        distiset = distiset["default"]
+        outputs = distiset.to_pandas()[["prompt", "completion", "system_prompt"]]
+        dataframe = pd.DataFrame(outputs)
+        progress(1.0, desc="Dataset generation completed")
+        return dataframe
 
     def generate_text_generation_data(self,
                                       model_config: dict,
@@ -193,9 +239,38 @@ class InstructPipeline():
                              temperature:float = 0.7, 
                              progress=gr.Progress()):
         
+        total_steps: int = num_samples * 2
+        batch_size = DEFAULT_BATCH_SIZE
 
+        generation_kwargs = {
+            "temperature": temperature,
+            "max_new_tokens": 256 if is_sample else int(MAX_NUM_TOKENS * 0.5),
+        }
+        response_generator = TextGeneration(
+            llm=self._get_llm(is_completion=True, generation_kwargs=generation_kwargs),
+            output_mappings={"generation": "completion"},
+            input_mappings={"instruction": "prompt"},
+        )
+        response_generator.load()
+        # generate responses
+        n_processed = 0
+        response_results = []
+        while n_processed < num_samples:
+            progress(
+                0.5 + 0.5 * n_processed / num_samples,
+                total=total_steps,
+                desc="(2/2) Generating responses",
+            )
+            batch = instuctions[n_processed : n_processed + batch_size]
+            responses = list(response_generator.process(inputs=batch))
+            response_results.extend(responses[0])
+            n_processed += batch_size
 
-
+        for result in response_results:
+            result["prompt"] = result["instruction"]
+            result["completion"] = result["generation"]
+        
+        return response_results
     
     def _get_llm(self,
                  structured_output: dict = None,
