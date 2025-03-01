@@ -266,7 +266,7 @@ class InstructPipeline():
                 sampled_context += [random.choice(document_context) for _ in range(num_samples - len(sampled_context))]
             
             instructuing_generator = GenerateSentencePair(
-                llm=_get_llm(generation_kwargs=generation_kwargs),
+                llm=self._get_llm(generation_kwargs=generation_kwargs),
                 triplet=False,
                 action="query",
                 hard_negative=True,
@@ -296,6 +296,8 @@ class InstructPipeline():
             n_processed += batch_size
             
         progress(0.5, desc="(1/2) Generating instructions")
+
+        #TODO: generate responses
         
         return text_generation_data
     
