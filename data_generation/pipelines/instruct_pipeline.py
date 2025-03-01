@@ -24,6 +24,7 @@ from prompts.prompts import PROMPT_CREATION_SYS_PROMPT, SYSTEM_PROMPT_W_DOCUMENT
 MAX_NUM_TOKENS = int(os.getenv("MAX_NUM_TOKENS", 2048))
 NUM_EVAL_SAMPLES = int(os.getenv("NUM_EVAL_SAMPLES", 10))
 DEFAULT_BATCH_SIZE = int(os.getenv("DEFAULT_BATCH_SIZE", 5))
+DEFAULT_SAMPLE_INSTRUCTIONS_NUM = int(os.getenv("DEFAULT_SAMPLE_INSTRUCTIONS_NUM", 5))
 
 model_configs_file = os.getenv("MODEL_CONFIGS", "../configs/model_configs.json")
 
@@ -39,15 +40,14 @@ class InstructPipeline():
                          num_samples: int = 5,
                          use_magpie: bool = True,
                          progress=gr.Progress()):
+        
         progress(0.1, desc="Initializing...")
         kl_divergence = {}
-        progress(0.2, desc="Generating system prompt...")
-        system_prompt = self.generate_system_prompt(dataset_description)
 
         for model, config in self.models:
             if config["client_type"] == "vllm" and use_magpie:
                 system_prompt = self.generate_system_prompt(dataset_description, config)
-                magpie_num_examples = int(NUM_EVAL_SAMPLES/2)
+                magpie_num_examples = int(NUM_EVAL_SAMPLES/2) if len(document_context) > 0 else NUM_EVAL_SAMPLES
                 text_gen_num_examples = NUM_EVAL_SAMPLES - magpie_num_examples
 
                 magpie_examples = self.generate_magpie_data(
@@ -60,6 +60,7 @@ class InstructPipeline():
 
             elif config["client_type"] == "vllm" or config["client_type"] == "openai":
                 system_prompt = self.generate_system_prompt(dataset_description, config)
+                assert example_instructions is not None or len(document_context) > 0, "example_instructions or document_context required"
                 text_gen_num_examples = NUM_EVAL_SAMPLES
 
     def generate_system_prompt(self, 
@@ -132,6 +133,8 @@ class InstructPipeline():
             sampled_system_prompts = [SYSTEM_PROMPT_W_DOCUMENT_CONTEXT.format(
                 system_prompt=system_prompt,
                 document_context=context) for context in sampled_context]
+            if len(sampled_context) < num_samples:
+                sampled_system_prompts += [system_prompt for _ in range(num_samples - len(sampled_context))]
         else:
             sampled_system_prompts = [system_prompt for _ in range(num_samples)]
 
@@ -147,6 +150,8 @@ class InstructPipeline():
         )
 
         magpie.load()
+
+        batch_size = DEFAULT_BATCH_SIZE
         
         # create instructions
         n_processed = 0
@@ -159,7 +164,8 @@ class InstructPipeline():
             )
             remaining_rows = num_samples - n_processed
             batch_size = min(batch_size, remaining_rows)
-            inputs = [{"system_prompt": prompt} for prompt in sampled_system_prompts]
+            batch = sampled_system_prompts[n_processed : n_processed + batch_size]
+            inputs = [{"system_prompt": prompt} for prompt in batch]
             batch = list(magpie.process(inputs=inputs))
             magpie_results.extend(batch[0])
             n_processed += batch_size
@@ -219,13 +225,77 @@ class InstructPipeline():
                                       system_prompt: str = "",
                                       temperature:float = 0.7, 
                                       progress=gr.Progress()):
-        
+        ''
         progress(0.1, desc="Initializing...")
         generation_kwargs = {
             "temperature": temperature,
-            "max_new_tokens": 256 if is_sample else int(MAX_NUM_TOKENS * 0.5),
+            "max_new_tokens": 256 if is_sample else MAX_NUM_TOKENS,
         }
 
+        if example_instructions is not None:
+            # get random num_samples example instructions from "prompt" column and "completion" column
+            sampled_instructions = example_instructions.sample(n=DEFAULT_SAMPLE_INSTRUCTIONS_NUM, random_state=42)[["prompt", "completion"]]
+
+            sampled_prompts = sampled_instructions["prompt"].tolist()
+            
+            instructuing_generator = TextGeneration(
+                llm=self._get_llm(is_completion=True, 
+                                generation_kwargs=generation_kwargs),
+                output_mappings={"generation": "completion"},
+            )
+            instructuing_generator.load()
+
+            if document_context:
+                sampled_context = random.sample(document_context, min(len(document_context), num_samples))
+                sampled_system_prompts = [SYSTEM_PROMPT_W_DOCUMENT_CONTEXT.format(
+                    system_prompt=system_prompt,
+                    document_context=context) for context in sampled_context]
+                if len(sampled_context) < num_samples:
+                    sampled_system_prompts += [system_prompt for _ in range(num_samples - len(sampled_context))]
+            else:
+                sampled_system_prompts = [system_prompt for _ in range(num_samples)]
+
+            text_generation_data = []
+            for system_prompt in sampled_system_prompts:
+                text_generation_data.append({"examples": sampled_prompts, "system_prompt": system_prompt})
+        
+        else:
+            assert len(document_context) > 0, "document_context required"
+            sampled_context = random.sample(document_context, min(len(document_context), num_samples))
+            if len(sampled_context) < num_samples:
+                sampled_context += [random.choice(document_context) for _ in range(num_samples - len(sampled_context))]
+            
+            instructuing_generator = GenerateSentencePair(
+                llm=_get_llm(generation_kwargs=generation_kwargs),
+                triplet=False,
+                action="query",
+                hard_negative=True,
+            )
+            instructuing_generator.load()
+
+            text_generation_data = [{"anchor": context} for context in sampled_context]
+
+        total_steps: int = num_samples * 2
+
+        batch_size = DEFAULT_BATCH_SIZE
+
+        # create instructions
+        n_processed = 0
+        instructions_results = []
+        while n_processed < num_samples:
+            progress(
+                0.5 * n_processed / num_samples,
+                total=total_steps,
+                desc="(1/2) Generating instructions",
+            )
+            remaining_rows = num_samples - n_processed
+            batch_size = min(batch_size, remaining_rows)
+            batch = text_generation_data[n_processed : n_processed + batch_size]
+            batch = list(instructuing_generator.process(inputs=batch))
+            instructions_results.extend(batch[0])
+            n_processed += batch_size
+            
+        progress(0.5, desc="(1/2) Generating instructions")
         
         return text_generation_data
     
@@ -234,7 +304,7 @@ class InstructPipeline():
                              is_sample: bool,
                              num_samples: int,
                              document_context: List[str],
-                             instuctions: Union[List[dict], List[str]],
+                             instuctions: List[dict],
                              system_prompt: str = "",
                              temperature:float = 0.7, 
                              progress=gr.Progress()):

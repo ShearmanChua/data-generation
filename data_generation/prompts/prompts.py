@@ -131,3 +131,13 @@ GENERATE_DESCRIPTION_INSTRUCTION_W_EXAMPLES = (
     "Focus on quality text content. "
     "Now, generate the instruction without any pre/postamble"
 )
+
+EXAMPLE_INSTRUCTIONS_TEMPLATE = '''Generate a clear, single-sentence instruction based on the following examples:
+
+{% for example in examples %}
+Example {{ loop.index }}:
+Instruction: {{ example }}
+
+{% endfor %}
+Now, generate a new instruction in a similar style:
+'''.rstrip()
