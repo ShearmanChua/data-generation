@@ -98,8 +98,15 @@ class InstructPipeline():
                              document_context: List[str],
                              system_prompt: str = "",
                              temperature:float = 0.7, 
-                             progress=gr.Progress()):
+                             progress=gr.Progress()) -> pd.DataFrame:
         
+        """
+        Generate text generation data using the Magpie framework. This function takes a model config, a boolean indicating whether to sample
+        or generate all possible examples, the number of samples to generate, a list of document context, 
+        an optional system prompt, and an optional temperature.
+        It returns a pandas DataFrame with the generated text generation data.
+        """
+    
         assert "magpie_pre_query_template" in model_config, "magpie_pre_query_template required in model_config"
         
         if model_config["magpie_pre_query_template"] == "llama3":
@@ -223,9 +230,15 @@ class InstructPipeline():
                                       document_context: List[str],
                                       example_instructions: pd.DataFrame = None,
                                       system_prompt: str = "",
-                                      temperature:float = 0.7, 
-                                      progress=gr.Progress()):
-        ''
+                                      temperature:float = 0.7,
+                                      progress=gr.Progress()) -> pd.DataFrame:
+    
+        """
+        Generate text generation data. This function takes a model config, a boolean indicating whether to sample
+        or generate all possible examples, the number of samples to generate, a list of document context, 
+        an optional dataframe of example instructions, an optional system prompt, and an optional temperature.
+        It returns a pandas DataFrame with the generated text generation data.
+        """
         progress(0.1, desc="Initializing...")
         generation_kwargs = {
             "temperature": temperature,
@@ -244,7 +257,7 @@ class InstructPipeline():
                 output_mappings={"generation": "completion"},
             )
             instructuing_generator.load()
-
+            # if document_context is not empty, sample from document_context
             if document_context:
                 sampled_context = random.sample(document_context, min(len(document_context), num_samples))
                 sampled_system_prompts = [SYSTEM_PROMPT_W_DOCUMENT_CONTEXT.format(
@@ -262,14 +275,19 @@ class InstructPipeline():
         else:
             assert len(document_context) > 0, "document_context required"
             sampled_context = random.sample(document_context, min(len(document_context), num_samples))
+            sampled_system_prompts = [SYSTEM_PROMPT_W_DOCUMENT_CONTEXT.format(
+                    system_prompt=system_prompt,
+                    document_context=context) for context in sampled_context]
             if len(sampled_context) < num_samples:
                 sampled_context += [random.choice(document_context) for _ in range(num_samples - len(sampled_context))]
-            
+                sampled_system_prompts += [system_prompt for _ in range(num_samples - len(sampled_context))]
+            #if no example_instructions, generate instructions from context
             instructuing_generator = GenerateSentencePair(
                 llm=self._get_llm(generation_kwargs=generation_kwargs),
                 triplet=False,
                 action="query",
                 hard_negative=True,
+                output_mappings={"positive": "completion"},
             )
             instructuing_generator.load()
 
@@ -297,7 +315,51 @@ class InstructPipeline():
             
         progress(0.5, desc="(1/2) Generating instructions")
 
-        #TODO: generate responses
+        for instruction, system_prompt in zip(instructions_results, sampled_system_prompts):
+            instruction["system_prompt"] = system_prompt
+
+        # generate responses
+
+        response_results = self.generate_instruction_responses(
+            model_config=model_config,
+            is_sample=is_sample,
+            num_samples=num_samples,
+            document_context=document_context,
+            instuctions=instructions_results,
+            progress=progress
+        )
+
+        progress(
+            1,
+            total=total_steps,
+            desc="(2/2) Creating dataset",
+        )
+
+        distiset_results = []
+        for result in response_results:
+            record = {}
+            for relevant_keys in [
+                "messages",
+                "prompt",
+                "completion",
+                "model_name",
+                "system_prompt",
+            ]:
+                if relevant_keys in result:
+                    record[relevant_keys] = result[relevant_keys]
+            distiset_results.append(record)
+
+        distiset = Distiset(
+            {
+                "default": Dataset.from_list(distiset_results),
+            }
+        )
+
+        distiset = distiset["default"]
+        outputs = distiset.to_pandas()[["prompt", "completion", "system_prompt"]]
+        dataframe = pd.DataFrame(outputs)
+        progress(1.0, desc="Dataset generation completed")
+        return dataframe
         
         return text_generation_data
     
