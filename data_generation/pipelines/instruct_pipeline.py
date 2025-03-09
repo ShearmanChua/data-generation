@@ -58,10 +58,32 @@ class InstructPipeline():
                     system_prompt=system_prompt,
                 )
 
+                text_gen_examples = self.generate_text_generation_data(
+                    model_config=config,
+                    is_sample=True,
+                    num_samples=text_gen_num_examples,
+                    document_context=document_context,
+                    example_instructions=example_instructions,
+                    system_prompt=system_prompt,
+                )
+
+                combined_examples = pd.concat([magpie_examples, text_gen_examples], ignore_index=True)
+
+
+
             elif config["client_type"] == "vllm" or config["client_type"] == "openai":
                 system_prompt = self.generate_system_prompt(dataset_description, config)
                 assert example_instructions is not None or len(document_context) > 0, "example_instructions or document_context required"
                 text_gen_num_examples = NUM_EVAL_SAMPLES
+
+                combined_examples = self.generate_text_generation_data(
+                    model_config=config,
+                    is_sample=True,
+                    num_samples=text_gen_num_examples,
+                    document_context=document_context,
+                    example_instructions=example_instructions,
+                    system_prompt=system_prompt,
+                )
 
     def generate_system_prompt(self, 
                                dataset_description: str,
@@ -360,8 +382,6 @@ class InstructPipeline():
         dataframe = pd.DataFrame(outputs)
         progress(1.0, desc="Dataset generation completed")
         return dataframe
-        
-        return text_generation_data
     
     def generate_instruction_responses(self,
                              model_config: dict,
